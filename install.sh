@@ -105,9 +105,19 @@ install_from_source() {
   post_install "$prefix"
 }
 
-# ── PATH hint ──────────────────────────────────────────────────────────
+# ── PATH hint + smoke check ────────────────────────────────────────────
 post_install() {
   local prefix="$1"
+  # Smoke check: run the freshly-installed binary so we catch broken
+  # downloads / arch mismatches immediately.
+  local ver
+  ver=$("$prefix/logify" version 2>/dev/null || true)
+  if [ -z "$ver" ]; then
+    say "$(red "✕") installed binary failed to run — try a manual download from"
+    say "    https://github.com/$REPO/releases"
+    exit 1
+  fi
+  say "$(green "✓") $ver"
   case ":$PATH:" in
     *":$prefix:"*) ;;
     *)

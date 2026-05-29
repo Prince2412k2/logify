@@ -18,6 +18,8 @@ curl -sSL https://raw.githubusercontent.com/Prince2412k2/logify/main/install.sh 
 iwr -useb https://raw.githubusercontent.com/Prince2412k2/logify/main/install.ps1 | iex
 ```
 
+Or download `install.bat` from the repo and double-click — that bootstraps the same flow without typing a PowerShell pipe.
+
 To track the rolling build of `main` (instead of the newest stable tag):
 
 ```bash
@@ -51,6 +53,13 @@ cd logify
 make build         # ./logify
 make install       # → ~/.local/bin/logify
 make release       # all platforms → dist/
+```
+
+### Uninstall
+
+```bash
+bash uninstall.sh                                                       # Linux / macOS
+iwr -useb https://raw.githubusercontent.com/Prince2412k2/logify/main/uninstall.ps1 | iex   # Windows
 ```
 
 ## Run
