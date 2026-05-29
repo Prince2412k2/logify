@@ -52,19 +52,23 @@ jobs:
         working-directory: ${{ env.WORKDIR }}
         run: VERSION="${{ steps.meta.outputs.version }}" bash scripts/build-all.sh
 
-      # ── Nightly: delete the old moving release/tag so the new one is clean.
+      # ── Nightly: delete the old release (keep no tag), then force-push the
+      # moving tag to the current SHA so action-gh-release can attach.
       - name: Reset moving nightly tag
         if: steps.meta.outputs.kind == 'nightly'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+          gh release delete nightly --yes 2>/dev/null || true
+          git tag -f nightly "${GITHUB_SHA}"
+          git push -f origin nightly
 
       - name: Publish nightly
         if: steps.meta.outputs.kind == 'nightly'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
+          target_commitish: ${{ github.sha }}
           name: "logify (nightly)"
           body: |
             Rolling build of `logify` from `main`.
@@ -77,6 +81,7 @@ jobs:
             ${{ env.WORKDIR }}/dist/logify-*
             ${{ env.WORKDIR }}/dist/SHA256SUMS
           prerelease: true
+          draft: false
           make_latest: false
 
       - name: Publish stable
