@@ -1,0 +1,14 @@
+# local build output
+/logify
+/logify.exe
+/dist/
+
+# user-local binding (created by `logify bind`)
+/.logify
+
+# editor / OS scratch
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

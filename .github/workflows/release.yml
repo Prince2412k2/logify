@@ -1,0 +1,92 @@
+name: logify
+
+# Two release modes:
+#   1. Tag push (vX.Y.Z) → stable release with that tag.
+#   2. Push to main touching logify/** → rolling "nightly" pre-release
+#      (a single moving tag, overwritten on every build).
+#
+# Either way, all six platform binaries get attached + SHA256SUMS.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch: {}   # allow manual triggering from the Actions tab
+
+permissions:
+  contents: write
+
+# Path to the Go module root within the repo. "." when logify is its own
+# repo; "logify" when it sits inside a monorepo.
+env:
+  WORKDIR: .
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+          cache-dependency-path: ${{ env.WORKDIR }}/go.sum
+
+      - name: Resolve version + release kind
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF_NAME}"     >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF_NAME}"          >> "$GITHUB_OUTPUT"
+            echo "kind=stable"                     >> "$GITHUB_OUTPUT"
+          else
+            short=$(echo "${GITHUB_SHA}" | cut -c1-8)
+            echo "version=nightly-${short}"        >> "$GITHUB_OUTPUT"
+            echo "tag=nightly"                     >> "$GITHUB_OUTPUT"
+            echo "kind=nightly"                    >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build all platforms
+        working-directory: ${{ env.WORKDIR }}
+        run: VERSION="${{ steps.meta.outputs.version }}" bash scripts/build-all.sh
+
+      # ── Nightly: delete the old moving release/tag so the new one is clean.
+      - name: Reset moving nightly tag
+        if: steps.meta.outputs.kind == 'nightly'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+
+      - name: Publish nightly
+        if: steps.meta.outputs.kind == 'nightly'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: "logify (nightly)"
+          body: |
+            Rolling build of `logify` from `main`.
+
+            * commit: ${{ github.sha }}
+            * built:  ${{ github.event.head_commit.timestamp }}
+
+            Use a stable tag (`vX.Y.Z`) if you don't want this to move under you.
+          files: |
+            ${{ env.WORKDIR }}/dist/logify-*
+            ${{ env.WORKDIR }}/dist/SHA256SUMS
+          prerelease: true
+          make_latest: false
+
+      - name: Publish stable
+        if: steps.meta.outputs.kind == 'stable'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            ${{ env.WORKDIR }}/dist/logify-*
+            ${{ env.WORKDIR }}/dist/SHA256SUMS
+          prerelease: ${{ contains(steps.meta.outputs.tag, '-rc') || contains(steps.meta.outputs.tag, '-beta') }}
