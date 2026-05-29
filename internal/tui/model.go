@@ -12,10 +12,24 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/princepatel/logify/internal/api"
+	"github.com/princepatel/logify/internal/binding"
 	"github.com/princepatel/logify/internal/config"
 	"github.com/princepatel/logify/internal/mock"
 	"github.com/princepatel/logify/internal/theme"
 )
+
+// thin wrappers so we don't carry the binding package name through every call.
+func bindingFind(dir string) (string, error)        { return binding.Find(dir) }
+func bindingLoad(path string) (*binding.File, error) { return binding.Load(path) }
+func bindingSave(path string, f *binding.File) error { return binding.Save(path, f) }
+
+func (m *Model) workingDir() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return wd
+}
 
 type viewMode int
 
@@ -67,6 +81,9 @@ type Model struct {
 	fullscreen bool
 	// scroll offset from the newest line. 0 = follow tail.
 	logsOffset int
+
+	// v2: telescope picker (replaces sidebar)
+	telescope TelescopeState
 
 	// search
 	searchOpen  bool
@@ -646,6 +663,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.view = viewMain
+		// v2: if .logify remembers a last_service, reselect it.
+		if last := m.loadLastService(); last != "" {
+			for j, k := range m.selectableKeys {
+				if rowMatchesService(m.navRows, k, last) {
+					m.selectedIdx = j
+					break
+				}
+			}
+		}
 		row, ok := m.currentRow()
 		if !ok {
 			return m, nil
@@ -936,6 +962,11 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Telescope overlay capture
+	if m.telescope.Open {
+		return m.handleTelescopeKey(k)
+	}
+
 	// Search overlay capture
 	if m.searchOpen && m.focused == "logs" {
 		return m.handleSearchKey(k)
@@ -957,6 +988,14 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showPicker = true
 		m.pickerIdx = themeIndex(m.cfg.Theme)
 		return m, nil
+	case "o", " ":
+		// Telescope picker (replaces the old sidebar).
+		m.openTelescope()
+		return m, nil
+	case "left":
+		return m.cycleTab(-1)
+	case "right":
+		return m.cycleTab(+1)
 	case "z":
 		m.fullscreen = !m.fullscreen
 		if m.fullscreen {
@@ -1055,6 +1094,112 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleLogsKey(k)
 }
 
+// ── telescope picker ───────────────────────────────────────────────────
+
+// openTelescope shows the picker overlay seeded with the current selection.
+func (m *Model) openTelescope() {
+	sources := m.selectableServiceRows()
+	m.telescope.Open = true
+	m.telescope.Filter = ""
+	// Position cursor on current selection if possible.
+	cur := m.selectedKey()
+	m.telescope.Cursor = 0
+	for i, r := range sources {
+		if r.Key == cur {
+			m.telescope.Cursor = i
+			break
+		}
+	}
+	m.telescope.Recompute(sources)
+}
+
+func (m *Model) selectableServiceRows() []ServiceRow {
+	out := make([]ServiceRow, 0, len(m.navRows))
+	for _, r := range m.navRows {
+		if !r.IsHeader {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (m Model) handleTelescopeKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	sources := m.selectableServiceRows()
+	switch k.String() {
+	case "esc":
+		m.telescope.Open = false
+		m.telescope.Filter = ""
+		return m, nil
+	case "enter":
+		if row, ok := m.telescope.SelectedRow(sources); ok {
+			// find this row in selectableKeys + select it
+			for j, k := range m.selectableKeys {
+				if k == row.Key {
+					m.selectedIdx = j
+					m.telescope.Open = false
+					m.telescope.Filter = ""
+					m.focused = "logs"
+					m.persistLastService(row.Service)
+					return m, m.queueStreamForSelection()
+				}
+			}
+		}
+		m.telescope.Open = false
+		return m, nil
+	case "up", "ctrl+k", "ctrl+p":
+		if m.telescope.Cursor > 0 {
+			m.telescope.Cursor--
+		}
+		return m, nil
+	case "down", "ctrl+j", "ctrl+n":
+		if m.telescope.Cursor < len(m.telescope.Filtered)-1 {
+			m.telescope.Cursor++
+		}
+		return m, nil
+	case "backspace":
+		if len(m.telescope.Filter) > 0 {
+			m.telescope.Filter = m.telescope.Filter[:len(m.telescope.Filter)-1]
+			m.telescope.Recompute(sources)
+		}
+		return m, nil
+	}
+	if k.Type == tea.KeyRunes {
+		m.telescope.Filter += string(k.Runes)
+		m.telescope.Recompute(sources)
+	}
+	return m, nil
+}
+
+// cycleTab shifts activeTab by delta (left/right keys on desktop, also useful
+// on mobile where numeric jumps + arrows are the primary tab nav).
+func (m Model) cycleTab(delta int) (tea.Model, tea.Cmd) {
+	idx, _ := TabByID(m.activeTab)
+	idx = (idx + delta + len(Tabs)) % len(Tabs)
+	m.activeTab = Tabs[idx].ID
+	return m, m.maybeFetchActive()
+}
+
+// persistLastService writes the chosen service name into .logify so the next
+// launch re-opens it. Best-effort; failures are silent.
+func (m *Model) persistLastService(name string) {
+	if m.cfgPath == "" {
+		return
+	}
+	bpath, _ := bindingFind(m.workingDir())
+	if bpath == "" {
+		return
+	}
+	f, err := bindingLoad(bpath)
+	if err != nil || !f.IsBound() {
+		return
+	}
+	if f.LastService == name {
+		return
+	}
+	f.LastService = name
+	_ = bindingSave(bpath, f)
+}
+
 func themeIndex(id string) int {
 	for i, n := range theme.Order {
 		if n == id {
@@ -1062,6 +1207,29 @@ func themeIndex(id string) int {
 		}
 	}
 	return 0
+}
+
+// loadLastService reads the .logify file (if present) and returns the
+// remembered service name. Empty string when not set / not bound.
+func (m *Model) loadLastService() string {
+	bpath, _ := bindingFind(m.workingDir())
+	if bpath == "" {
+		return ""
+	}
+	f, err := bindingLoad(bpath)
+	if err != nil || !f.IsBound() {
+		return ""
+	}
+	return f.LastService
+}
+
+func rowMatchesService(navRows []ServiceRow, key, svcName string) bool {
+	for _, r := range navRows {
+		if !r.IsHeader && r.Key == key {
+			return r.Service == svcName
+		}
+	}
+	return false
 }
 
 func (m Model) handleNavKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1477,6 +1645,9 @@ func (m Model) View() string {
 		Fullscreen:   m.fullscreen,
 	}
 	base := buildMain(th, lay, st)
+	if m.telescope.Open {
+		base = buildTelescopeOverlay(th, lay, base, m.telescope, m.selectableServiceRows())
+	}
 	if m.showHelp {
 		base = buildHelpOverlay(th, lay, base)
 	} else if m.showPicker {

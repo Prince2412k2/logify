@@ -30,28 +30,50 @@ const (
 	DefTotalH  = 38
 )
 
+// LayoutMode is the responsive breakpoint of the current terminal.
+type LayoutMode int
+
+const (
+	ModeDesktop LayoutMode = iota // ≥ 100 cols
+	ModeCompact                   // 60 .. 99 cols
+	ModeMobile                    // < 60 cols (SSH from phone, etc.)
+)
+
+const (
+	DesktopMinW = 100
+	CompactMinW = 60
+)
+
 // Layout caches a sized layout (recomputed on resize).
 type Layout struct {
 	TotalW int
 	TotalH int
 	LogsW  int
+	Mode   LayoutMode
 }
 
 func NewLayout(w, h int) Layout {
-	if w < MinTotalW {
-		w = MinTotalW
+	// Hard floor — anything narrower we still try to render in mobile mode.
+	if w < 40 {
+		w = 40
 	}
-	if h < MinTotalH {
-		h = MinTotalH
+	if h < 14 {
+		h = 14
 	}
-	// Logs interior = total - (outer border*2 + outer-pad*2 + inner box borders*2 + nav inner + separator)
-	// outer-pad already includes the outer border itself per our row builders, so:
-	// total = 1(outer-l) + 1(gutter) + 1(nav-l) + navW + 1(sep) + logsW + 1(logs-r) + 1(gutter) + 1(outer-r)
-	logsW := w - 2 /*outer*/ - 2 /*gutter*/ - 2 /*inner borders*/ - 1 /*separator*/ - NavW
+	mode := ModeDesktop
+	switch {
+	case w < CompactMinW:
+		mode = ModeMobile
+	case w < DesktopMinW:
+		mode = ModeCompact
+	}
+	// v2: no nav pane. Logs takes the full inner width.
+	// total = 1(outer-l) + 1(gutter) + 1(inner-l) + logsW + 1(inner-r) + 1(gutter) + 1(outer-r)
+	logsW := w - 6
 	if logsW < 30 {
 		logsW = 30
 	}
-	return Layout{TotalW: w, TotalH: h, LogsW: logsW}
+	return Layout{TotalW: w, TotalH: h, LogsW: logsW, Mode: mode}
 }
 
 // Segment is one styled run in a row. Width math uses len(rune(Text)).

@@ -1,31 +1,47 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/princepatel/logify/internal/theme"
 )
 
-// buildMain assembles the main view: split pane normally, or logs-only when
-// fullscreen.
+// buildMain assembles the main view (v2: logs-only, no sidebar).
 func buildMain(th theme.Theme, lay Layout, st screenState) []Row {
-	if st.Fullscreen {
-		return buildMainFullscreen(th, lay, st)
-	}
 	var rows []Row
 	rows = append(rows, topBorderRow(th, lay, st.SelectedPath, st.Connection, st.tailIfLogs()))
 	rows = append(rows, spacerRow(th, lay))
-	rows = append(rows, innerBoxTopRow(th, lay, st.Focused))
+
+	// One inner box around the logs pane (always "focused" since there's no
+	// other pane to give focus to).
+	colLog := th.BorderFoc
+	innerW := lay.TotalW - 4
+	rows = append(rows, edgeRow(th, lay, []Segment{
+		{Text: " ", FG: th.Border},
+		{Text: BTL + strings.Repeat(BH, innerW-2) + BTR, FG: colLog},
+		{Text: " ", FG: th.Border},
+	}))
 
 	contentRows := lay.TotalH - 7
 	if contentRows < 4 {
 		contentRows = 4
 	}
-	nav := navContent(th, st.NavRows, st.SelectedKey, st.NavQuery, st.Focused == "nav", contentRows)
 	logs := logsContent(th, lay, st.LogsState, contentRows)
-
 	for i := 0; i < contentRows; i++ {
-		rows = append(rows, innerSplitRow(th, lay, st.Focused, nav[i], logs[i]))
+		row := []Segment{
+			{Text: " ", FG: th.Border},
+			{Text: BV, FG: colLog},
+		}
+		row = append(row, logs[i]...)
+		row = append(row, Segment{Text: BV, FG: colLog})
+		row = append(row, Segment{Text: " ", FG: th.Border})
+		rows = append(rows, edgeRow(th, lay, row))
 	}
-	rows = append(rows, innerBoxBottomRow(th, lay, st.Focused))
+	rows = append(rows, edgeRow(th, lay, []Segment{
+		{Text: " ", FG: th.Border},
+		{Text: BBL + strings.Repeat(BH, innerW-2) + BBR, FG: colLog},
+		{Text: " ", FG: th.Border},
+	}))
 	rows = append(rows, spacerRow(th, lay))
 	rows = append(rows, edgeRow(th, lay, helpStripInterior(th, lay, st.Notice)))
 	rows = append(rows, bottomBorderRow(th, lay))

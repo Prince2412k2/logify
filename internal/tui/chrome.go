@@ -156,24 +156,41 @@ func helpStripInterior(th theme.Theme, lay Layout, notice string) []Segment {
 		}, lay.TotalW-2, th.Text)
 	}
 	segs := []Segment{{Text: " ", FG: th.Text}}
-	add := func(key, label string, last bool) {
+	add := func(key, label string) {
 		segs = append(segs, Segment{Text: key, FG: th.Accent, Bold: true})
 		segs = append(segs, Segment{Text: " " + label, FG: th.Muted})
-		if !last {
-			segs = append(segs, Segment{Text: "  ·  ", FG: th.Dim})
-		}
+		segs = append(segs, Segment{Text: "  ·  ", FG: th.Dim})
 	}
-	add("↑↓", "nav", false)
-	add("⏎", "focus", false)
-	add("⇥", "pane", false)
-	add("/", "search", false)
-	add("␣", "pause", false)
-	add("y", "yank", false)
-	add("w", "wrap", false)
-	add("z", "zoom", false)
-	add("f", "filter", false)
-	add("t", "theme", false)
-	add("?", "help", false)
-	add("q", "quit", true)
+	last := func(key, label string) {
+		segs = append(segs, Segment{Text: key, FG: th.Accent, Bold: true})
+		segs = append(segs, Segment{Text: " " + label, FG: th.Muted})
+	}
+	switch lay.Mode {
+	case ModeMobile:
+		add("o", "open")
+		add("/", "find")
+		add("1-5", "tab")
+		last("q", "quit")
+	case ModeCompact:
+		add("o", "open")
+		add("←→", "tabs")
+		add("/", "search")
+		add("␣", "pause")
+		add("y", "yank")
+		add("?", "help")
+		last("q", "quit")
+	default:
+		add("o", "open")
+		add("←→", "tabs")
+		add("/", "search")
+		add("␣", "pause")
+		add("y", "yank")
+		add("w", "wrap")
+		add("z", "zoom")
+		add("f", "filter")
+		add("t", "theme")
+		add("?", "help")
+		last("q", "quit")
+	}
 	return fitRow(segs, lay.TotalW-2, th.Text)
 }

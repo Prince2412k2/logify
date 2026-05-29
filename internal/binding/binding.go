@@ -12,10 +12,13 @@ import (
 
 const FileName = ".logify"
 
-// File represents the on-disk shape of .logify. One project per directory.
+// File represents the on-disk shape of .logify. One project per directory;
+// LastService remembers which service was open so re-launching the TUI
+// resumes where the user left off.
 type File struct {
-	Project   string `toml:"project"    json:"project"`
-	ProjectID string `toml:"project_id" json:"project_id"`
+	Project     string `toml:"project"               json:"project"`
+	ProjectID   string `toml:"project_id"            json:"project_id"`
+	LastService string `toml:"last_service,omitempty" json:"last_service,omitempty"`
 }
 
 // Find walks up from startDir looking for the first .logify file.

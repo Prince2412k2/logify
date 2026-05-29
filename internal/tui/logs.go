@@ -35,6 +35,9 @@ func logsBlankRow(th theme.Theme, lay Layout) []Segment {
 }
 
 func logsTabsRow(th theme.Theme, lay Layout, activeTab string) []Segment {
+	if lay.Mode == ModeMobile {
+		return logsTabsRowMobile(th, lay, activeTab)
+	}
 	segs := []Segment{{Text: " ", FG: th.Text}}
 	for i, t := range Tabs {
 		if t.ID == activeTab {
@@ -54,7 +57,37 @@ func logsTabsRow(th theme.Theme, lay Layout, activeTab string) []Segment {
 	return fitRow(segs, lay.LogsW, th.Text)
 }
 
+// logsTabsRowMobile renders one-digit labels — perfect for narrow SSH terminals.
+// Numeric labels reinforce the 1..5 hotkeys.
+func logsTabsRowMobile(th theme.Theme, lay Layout, activeTab string) []Segment {
+	segs := []Segment{{Text: " ", FG: th.Text}}
+	for i, t := range Tabs {
+		label := fmt.Sprintf("%d", i+1)
+		if t.ID == activeTab {
+			segs = append(segs, Segment{Text: "[", FG: th.Accent})
+			segs = append(segs, Segment{Text: label, FG: th.Accent, Bold: true})
+			segs = append(segs, Segment{Text: "]", FG: th.Accent})
+		} else {
+			segs = append(segs, Segment{Text: " ", FG: th.Text})
+			segs = append(segs, Segment{Text: label, FG: th.Muted})
+			if t.Stub {
+				segs = append(segs, Segment{Text: "·", FG: th.Dim})
+			} else {
+				segs = append(segs, Segment{Text: " ", FG: th.Text})
+			}
+		}
+		if i < len(Tabs)-1 {
+			segs = append(segs, Segment{Text: " ", FG: th.Text})
+		}
+	}
+	return fitRow(segs, lay.LogsW, th.Text)
+}
+
 func logsTabsSeparator(th theme.Theme, lay Layout, activeTab string) []Segment {
+	if lay.Mode == ModeMobile {
+		// In mobile mode the labels are tiny — a simple dim separator suffices.
+		return []Segment{{Text: strings.Repeat(BH, lay.LogsW), FG: th.Dim}}
+	}
 	offset := 1
 	type rng struct{ id string; start, length int }
 	ranges := []rng{}
