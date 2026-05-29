@@ -8,7 +8,7 @@ import (
 
 // topBorderRow builds the rounded top frame with brand + breadcrumb on the left
 // and connection-status pill on the right.
-func topBorderRow(th theme.Theme, lay Layout, breadcrumb, conn string, tail int) Row {
+func topBorderRow(th theme.Theme, lay Layout, breadcrumb, conn string, tail int, isAdmin bool) Row {
 	left := []Segment{
 		{Text: BTL + BH + " ", FG: th.Border},
 		{Text: "logify", FG: th.Accent, Bold: true},
@@ -22,6 +22,14 @@ func topBorderRow(th theme.Theme, lay Layout, breadcrumb, conn string, tail int)
 			Segment{Text: breadcrumb, FG: th.Text},
 		)
 		leftLen += 3 + runeLen(breadcrumb)
+	}
+	if isAdmin {
+		chip := " ◆ admin "
+		left = append(left,
+			Segment{Text: " ", FG: th.Border},
+			Segment{Text: chip, FG: th.AccentFg, BG: th.Accent, Bold: true},
+		)
+		leftLen += 1 + runeLen(chip)
 	}
 	left = append(left, Segment{Text: " ", FG: th.Border})
 	leftLen++

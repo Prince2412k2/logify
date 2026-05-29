@@ -70,6 +70,8 @@ func Run(argv []string, tuiLauncher TUILauncher) int {
 		return cmdBind(env, rest)
 	case "unbind":
 		return removeBinding(env)
+	case "admin":
+		return cmdAdmin(env, rest)
 	case "help", "-h", "--help":
 		return cmdManifest(cfg, gf)
 	}

@@ -9,7 +9,7 @@ import (
 // buildMain assembles the main view (v2: logs-only, no sidebar).
 func buildMain(th theme.Theme, lay Layout, st screenState) []Row {
 	var rows []Row
-	rows = append(rows, topBorderRow(th, lay, st.SelectedPath, st.Connection, st.tailIfLogs()))
+	rows = append(rows, topBorderRow(th, lay, st.SelectedPath, st.Connection, st.tailIfLogs(), st.IsAdmin))
 	rows = append(rows, spacerRow(th, lay))
 
 	// One inner box around the logs pane (always "focused" since there's no
@@ -51,7 +51,7 @@ func buildMain(th theme.Theme, lay Layout, st screenState) []Row {
 // buildMainFullscreen renders the logs pane across the full width.
 func buildMainFullscreen(th theme.Theme, lay Layout, st screenState) []Row {
 	var rows []Row
-	rows = append(rows, topBorderRow(th, lay, st.SelectedPath+"  (zoom)", st.Connection, st.tailIfLogs()))
+	rows = append(rows, topBorderRow(th, lay, st.SelectedPath+"  (zoom)", st.Connection, st.tailIfLogs(), st.IsAdmin))
 	rows = append(rows, spacerRow(th, lay))
 
 	// Inner top border for the logs pane (full width).
@@ -103,7 +103,7 @@ func (s screenState) tailIfLogs() int {
 // centeredBoxScreen builds a generic centred-message view (connecting, errors).
 func centeredBoxScreen(th theme.Theme, lay Layout, lines [][]Segment, conn string) []Row {
 	var rows []Row
-	rows = append(rows, topBorderRow(th, lay, "", conn, 0))
+	rows = append(rows, topBorderRow(th, lay, "", conn, 0, false))
 	rows = append(rows, spacerRow(th, lay))
 	fill := lay.TotalH - 4
 	top := (fill - len(lines)) / 2
@@ -330,7 +330,7 @@ func buildErrorCard(th theme.Theme, lay Layout, c errorCard) []Row {
 	}
 
 	var rows []Row
-	rows = append(rows, topBorderRow(th, lay, "", conn, 0))
+	rows = append(rows, topBorderRow(th, lay, "", conn, 0, false))
 	rows = append(rows, spacerRow(th, lay))
 
 	fill := lay.TotalH - 4
@@ -578,7 +578,7 @@ func buildFirstRun(th theme.Theme, lay Layout, urlVal, tokenVal string, focused 
 	}
 
 	var rows []Row
-	rows = append(rows, topBorderRow(th, lay, "first run", "connecting", 0))
+	rows = append(rows, topBorderRow(th, lay, "first run", "connecting", 0, false))
 	rows = append(rows, spacerRow(th, lay))
 	fill := lay.TotalH - 4
 	top := (fill - len(lines)) / 2
@@ -769,4 +769,5 @@ type screenState struct {
 	LogsState    LogsState
 	Notice       string // transient toast, e.g. "Copied 42 lines"
 	Fullscreen   bool   // hide nav pane and give logs the full width
+	IsAdmin      bool   // toggles the ◆ admin chip in the header
 }

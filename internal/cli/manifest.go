@@ -38,6 +38,12 @@ var Manifest = []commandDef{
 			{Name: "list", Type: "bool", Desc: "print current binding as JSON"},
 		}},
 	{Name: "unbind", Description: "Alias for `bind --remove`."},
+	{Name: "admin", Args: []string{"subcommand"}, Description: "Admin write actions (requires an admin key). Subcommands: restart, redeploy, audit.",
+		Flags: []flagDef{
+			{Name: "force", Type: "bool", Desc: "with redeploy: force-rebuild (skip image cache)"},
+			{Name: "yes", Type: "bool", Desc: "skip [y/N] confirmation"},
+			{Name: "limit", Type: "int", Default: 50, Desc: "with audit: max rows"},
+		}},
 }
 
 // BoundContext is the agent-friendly summary of the .logify state.

@@ -127,6 +127,55 @@ func (c *Client) EnvVars(ctx context.Context, resourceUUID string) ([]EnvVar, er
 	return out, nil
 }
 
+// ── admin write ops ─────────────────────────────────────────────────
+
+type AdminResult struct {
+	OK            bool   `json:"ok"`
+	Action        string `json:"action"`
+	ContainerName string `json:"container_name,omitempty"`
+	Force         bool   `json:"force,omitempty"`
+	Coolify       any    `json:"coolify,omitempty"`
+}
+
+func (c *Client) AdminRestart(ctx context.Context, resourceUUID string) (AdminResult, error) {
+	var out AdminResult
+	err := c.request(ctx, http.MethodPost, "/api/admin/services/"+resourceUUID+"/restart", &out)
+	return out, err
+}
+
+func (c *Client) AdminRedeploy(ctx context.Context, resourceUUID string, force bool) (AdminResult, error) {
+	var out AdminResult
+	url := "/api/admin/services/" + resourceUUID + "/redeploy"
+	if force {
+		url += "?force=true"
+	}
+	err := c.request(ctx, http.MethodPost, url, &out)
+	return out, err
+}
+
+type AuditEntry struct {
+	ID        int    `json:"id"`
+	TS        string `json:"ts"`
+	KeyPrefix string `json:"key_prefix"`
+	KeyName   string `json:"key_name"`
+	Action    string `json:"action"`
+	Target    string `json:"target"`
+	Result    string `json:"result"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+func (c *Client) AdminAudit(ctx context.Context, limit int) ([]AuditEntry, error) {
+	var out []AuditEntry
+	url := "/api/admin/audit"
+	if limit > 0 {
+		url += fmt.Sprintf("?limit=%d", limit)
+	}
+	if err := c.request(ctx, http.MethodGet, url, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // wsURL converts http(s):// → ws(s):// for the gateway base.
 func (c *Client) wsURL(path string, q url.Values) string {
 	u := c.BaseURL + path

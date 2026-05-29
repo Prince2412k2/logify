@@ -68,3 +68,17 @@ type EnvErrorMsg struct {
 	ResourceUUID string
 	Err          string
 }
+
+// AdminCheckedMsg carries the result of pinging /api/admin/audit at startup
+// to figure out whether the current key is admin (so the header chip + the
+// destructive-action shortcuts are gated appropriately).
+type AdminCheckedMsg struct {
+	IsAdmin bool
+}
+
+// AdminActionDoneMsg fires after an admin restart/redeploy POST returns.
+type AdminActionDoneMsg struct {
+	Action string // "restart" | "redeploy"
+	OK     bool
+	Detail string
+}

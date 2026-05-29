@@ -85,6 +85,11 @@ type Model struct {
 	// v2: telescope picker (replaces sidebar)
 	telescope TelescopeState
 
+	// v2.1: admin capability + pending confirmation
+	isAdmin   bool
+	confirm   *confirmState
+	adminBusy bool
+
 	// search
 	searchOpen  bool
 	searchQuery string
@@ -142,6 +147,14 @@ type Model struct {
 	lastTick      time.Time
 }
 
+// confirmState models the y/N modal for destructive actions.
+type confirmState struct {
+	Action  string // "restart" | "redeploy" | "force-redeploy"
+	Prompt  string
+	Service ServiceRow
+	Force   bool
+}
+
 // New builds a starting Model from config + flags.
 func New(cfg config.Config, cfgPath string, useMock bool) Model {
 	m := Model{
@@ -183,7 +196,29 @@ func (m Model) Init() tea.Cmd {
 	if m.view == viewFirstRun {
 		return nil
 	}
-	return tea.Batch(m.loadProjects(), tickCmd())
+	return tea.Batch(m.loadProjects(), tickCmd(), m.probeAdmin())
+}
+
+// probeAdmin hits /api/admin/audit?limit=1 — admin keys get 200, non-admins
+// get 403. We use this purely to set the header chip + enable Shift+R/D.
+func (m *Model) probeAdmin() tea.Cmd {
+	if m.mock {
+		return func() tea.Msg { return AdminCheckedMsg{IsAdmin: true} }
+	}
+	client := m.client
+	if client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := httpCtxQuick()
+		defer cancel()
+		_, err := client.AdminAudit(ctx, 1)
+		return AdminCheckedMsg{IsAdmin: err == nil}
+	}
+}
+
+func httpCtxQuick() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 4*time.Second)
 }
 
 func tickCmd() tea.Cmd {
@@ -734,6 +769,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		delete(m.envsLoading, msg.ResourceUUID)
 		return m, nil
 
+	case AdminCheckedMsg:
+		m.isAdmin = msg.IsAdmin
+		return m, nil
+
+	case AdminActionDoneMsg:
+		m.adminBusy = false
+		if msg.OK {
+			m.notice = msg.Action + " · " + msg.Detail
+		} else {
+			m.notice = msg.Action + " failed · " + msg.Detail
+		}
+		return m, dismissNotice()
+
 	case ProjectsErrorMsg:
 		switch msg.Kind {
 		case "auth":
@@ -967,6 +1015,11 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTelescopeKey(k)
 	}
 
+	// Confirmation modal capture (destructive admin actions)
+	if m.confirm != nil {
+		return m.handleConfirmKey(k)
+	}
+
 	// Search overlay capture
 	if m.searchOpen && m.focused == "logs" {
 		return m.handleSearchKey(k)
@@ -996,6 +1049,12 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.cycleTab(-1)
 	case "right":
 		return m.cycleTab(+1)
+	case "R": // Shift+R
+		return m.requestConfirm("restart", false)
+	case "D": // Shift+D
+		return m.requestConfirm("redeploy", false)
+	case "F": // Shift+F
+		return m.requestConfirm("redeploy", true)
 	case "z":
 		m.fullscreen = !m.fullscreen
 		if m.fullscreen {
@@ -1177,6 +1236,82 @@ func (m Model) cycleTab(delta int) (tea.Model, tea.Cmd) {
 	idx = (idx + delta + len(Tabs)) % len(Tabs)
 	m.activeTab = Tabs[idx].ID
 	return m, m.maybeFetchActive()
+}
+
+// ── admin destructive actions ─────────────────────────────────────
+
+func (m Model) requestConfirm(action string, force bool) (tea.Model, tea.Cmd) {
+	if !m.isAdmin {
+		m.notice = "this key isn't admin — read-only mode"
+		return m, dismissNotice()
+	}
+	if m.adminBusy {
+		m.notice = "another admin action in flight, please wait"
+		return m, dismissNotice()
+	}
+	row, ok := m.currentRow()
+	if !ok {
+		return m, nil
+	}
+	verb := action
+	if force {
+		verb = "force-rebuild + redeploy"
+	}
+	m.confirm = &confirmState{
+		Action:  action,
+		Prompt:  verb + " " + row.Path + " ?",
+		Service: row,
+		Force:   force,
+	}
+	return m, nil
+}
+
+func (m Model) handleConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "y", "Y", "enter":
+		c := m.confirm
+		m.confirm = nil
+		m.adminBusy = true
+		m.notice = c.Action + " · sending…"
+		return m, m.runAdminAction(*c)
+	case "n", "N", "esc", "q":
+		m.confirm = nil
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *Model) runAdminAction(c confirmState) tea.Cmd {
+	if m.mock {
+		return func() tea.Msg {
+			time.Sleep(400 * time.Millisecond)
+			return AdminActionDoneMsg{Action: c.Action, OK: true, Detail: c.Service.Path + " (mock)"}
+		}
+	}
+	client := m.client
+	uuid := c.Service.UUID
+	path := c.Service.Path
+	action := c.Action
+	force := c.Force
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		switch action {
+		case "restart":
+			_, err := client.AdminRestart(ctx, uuid)
+			if err != nil {
+				return AdminActionDoneMsg{Action: action, OK: false, Detail: err.Error()}
+			}
+			return AdminActionDoneMsg{Action: action, OK: true, Detail: path}
+		case "redeploy":
+			_, err := client.AdminRedeploy(ctx, uuid, force)
+			if err != nil {
+				return AdminActionDoneMsg{Action: action, OK: false, Detail: err.Error()}
+			}
+			return AdminActionDoneMsg{Action: action, OK: true, Detail: path}
+		}
+		return AdminActionDoneMsg{Action: action, OK: false, Detail: "unknown action"}
+	}
 }
 
 // persistLastService writes the chosen service name into .logify so the next
@@ -1643,10 +1778,14 @@ func (m Model) View() string {
 		LogsState:    logsState,
 		Notice:       m.notice,
 		Fullscreen:   m.fullscreen,
+		IsAdmin:      m.isAdmin,
 	}
 	base := buildMain(th, lay, st)
 	if m.telescope.Open {
 		base = buildTelescopeOverlay(th, lay, base, m.telescope, m.selectableServiceRows())
+	}
+	if m.confirm != nil {
+		base = buildConfirmOverlay(th, lay, base, *m.confirm)
 	}
 	if m.showHelp {
 		base = buildHelpOverlay(th, lay, base)
