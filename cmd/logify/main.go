@@ -5,15 +5,18 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/princepatel/logify/internal/api"
 	"github.com/princepatel/logify/internal/cli"
 	"github.com/princepatel/logify/internal/config"
 	"github.com/princepatel/logify/internal/tui"
 )
 
-const version = "0.1.0"
+// version is set at build time via -ldflags "-X main.version=..."
+var version = "dev"
 
 func main() {
 	cli.Version = version
+	api.UserAgent = version
 	os.Exit(cli.Run(os.Args[1:], launchTUI))
 }
 

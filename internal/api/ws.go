@@ -32,7 +32,9 @@ func (c *Client) StreamLogs(ctx context.Context, containerName string, tail int,
 
 	dialer := *websocket.DefaultDialer
 	dialer.HandshakeTimeout = 8 * time.Second
-	header := map[string][]string{}
+	header := map[string][]string{
+		"User-Agent": {"logify/" + UserAgent},
+	}
 	if c.Token != "" {
 		header["Authorization"] = []string{"Bearer " + c.Token}
 	}

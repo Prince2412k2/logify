@@ -18,6 +18,10 @@ type Client struct {
 	HTTP    *http.Client
 }
 
+// UserAgent is stamped into the HTTP User-Agent header. main.go overrides it
+// with the build's version string.
+var UserAgent = "dev"
+
 func New(baseURL, token string) *Client {
 	return &Client{
 		BaseURL: strings.TrimRight(baseURL, "/"),
@@ -49,6 +53,9 @@ func (c *Client) request(ctx context.Context, method, path string, out any) erro
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
+	// Some CDNs / WAFs (Cloudflare in particular) 403 the default
+	// `Go-http-client/1.1` user agent. Set something recognisable.
+	req.Header.Set("User-Agent", "logify/"+UserAgent)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return &ErrUnreachable{URL: u, Inner: err}
